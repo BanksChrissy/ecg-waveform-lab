@@ -1,12 +1,12 @@
 import {MAIN_COLUMN,RIGHT_COLUMN,DEFAULT_ORDER,activeLeads,leadRows,migrateSession,validateLeadSelection} from './layout.mjs';
-import {LEADS,STANDARD_LEADS,EXTRA_LEADS,RIGHT,POSTERIOR,RIGHT_POSTERIOR,PAIRED,STANDARD,DEFAULTS,WAVE_KEYS,waveSettings,validateShapes,compileModel,parseFormula,integrate,validateModel} from './engine.mjs';
+import {LEADS,STANDARD_LEADS,EXTRA_LEADS,RIGHT,POSTERIOR,RIGHT_POSTERIOR,PAIRED,STANDARD,DEFAULTS,WAVE_KEYS,ectopicWaveSettings,validateEctopy,waveSettings,validateShapes,compileModel,parseFormula,integrate,validateModel} from './engine.mjs';
 const $=id=>document.getElementById(id),KEY='ecg-calculus-lab-v1',DERIVED=['III','aVR','aVL','aVF'];
-const cleanState=()=>({version:4,shapes:{},extras:[],order:[...DEFAULT_ORDER],params:{...DEFAULTS},formulas:{},linked:true,layout:'columns',custom:PAIRED.map(r=>[...r]),duration:2.5,speed:25,gain:10,selected:'II',a:.29,b:.41});
-let state=cleanState(),model,view='v',detailGeometry=null,dragging=null,nextPoint='a',frame=0,shapeWave='R',interaction='reshape',shapeDrag=null,shapeHandles=[];
-function checkState(s){s=migrateSession(s);if(s?.version===3)s={...s,version:4,shapes:{}};if(!s||s.version!==4)throw Error('Unsupported session format.');for(const [k,min,max]of [['hr',30,180],['axis',-180,180],['width',.6,2.5],['pGain',-3,3],['tGain',-3,3]])if(!Number.isFinite(s.params?.[k])||s.params[k]<min||s.params[k]>max)throw Error('Invalid '+k+' setting.');if(!s.formulas||typeof s.formulas!=='object')throw Error('Missing formulas.');for(const [k,v]of Object.entries(s.formulas)){if(!LEADS.includes(k))throw Error('Unknown lead.');parseFormula(v);}if(![2.5,5,10].includes(s.duration)||![25,50].includes(s.speed)||![5,10,20].includes(s.gain)||!LEADS.includes(s.selected)||!['columns','stacked','paired','standard','custom'].includes(s.layout)||typeof s.linked!=='boolean')throw Error('Invalid display settings.');validateShapes(s.shapes);validateLeadSelection(s);checkLayout(s.custom);if(![s.a,s.b].every(x=>Number.isFinite(x)&&x>=0&&x<=s.duration))throw Error('Invalid caliper coordinates.');return s;}
+const cleanState=()=>({version:5,ectopy:[],shapes:{},extras:[],order:[...DEFAULT_ORDER],params:{...DEFAULTS},formulas:{},linked:true,layout:'columns',custom:PAIRED.map(r=>[...r]),duration:10,speed:25,gain:10,selected:'II',a:.29,b:.41});
+let state=cleanState(),model,view='v',detailGeometry=null,dragging=null,nextPoint='a',frame=0,shapeWave='R',interaction='reshape',shapeDrag=null,shapeHandles=[],editEvent=-1;
+function checkState(s){s=migrateSession(s);if(s?.version===3)s={...s,version:4,shapes:{}};if(s?.version===4)s={...s,version:5,ectopy:[],duration:10};if(!s||s.version!==5)throw Error('Unsupported session format.');for(const [k,min,max]of [['hr',30,300],['axis',-180,180],['width',.6,2.5],['pGain',-3,3],['tGain',-3,3]])if(!Number.isFinite(s.params?.[k])||s.params[k]<min||s.params[k]>max)throw Error('Invalid '+k+' setting.');if(!s.formulas||typeof s.formulas!=='object')throw Error('Missing formulas.');for(const [k,v]of Object.entries(s.formulas)){if(!LEADS.includes(k))throw Error('Unknown lead.');parseFormula(v);}if(![2.5,5,10].includes(s.duration)||![25,50].includes(s.speed)||![5,10,20].includes(s.gain)||!LEADS.includes(s.selected)||!['columns','stacked','paired','standard','custom'].includes(s.layout)||typeof s.linked!=='boolean')throw Error('Invalid display settings.');validateShapes(s.shapes);validateEctopy(s.ectopy);validateLeadSelection(s);checkLayout(s.custom);if(![s.a,s.b].every(x=>Number.isFinite(x)&&x>=0&&x<=s.duration))throw Error('Invalid caliper coordinates.');return s;}
 function checkLayout(rows){if(!Array.isArray(rows)||rows.length!==10||rows.some(r=>!Array.isArray(r)||r.length!==2||r.some(l=>l!==null&&!STANDARD_LEADS.includes(l))))throw Error('Use ten rows and two columns.');const used=rows.flat().filter(Boolean);if(used.length!==12||new Set(used).size!==12)throw Error('Place each of the 12 leads exactly once.');}
 try{const saved=localStorage.getItem(KEY);if(saved)state=checkState(JSON.parse(saved));}catch{state=cleanState();}
-model=compileModel(state.params,state.formulas,state.linked,state.shapes);
+model=compileModel(state.params,state.formulas,state.linked,state.shapes,state.ectopy);
 function toast(text){$('toast').textContent=text;$('toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').style.display='none',4200);}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('Browser storage is unavailable. Save a session file to keep your work.');}}
 const fmt=(x,n=3)=>Number.isFinite(x)?x.toLocaleString('en-US',{minimumFractionDigits:n,maximumFractionDigits:n}):'undefined';
@@ -36,16 +36,16 @@ function drawMap(){const invalid=[];for(const card of document.querySelectorAll(
 function drawDetail(){const canvas=$('detail');const {ctx,w,h}=setupCanvas(canvas);const points=makePoints(state.selected,Math.max(2400,Math.ceil(state.duration*1200)),view);let max=0;for(const [,v]of points)if(Number.isFinite(v))max=Math.max(max,Math.abs(v));let left=52,right=18,top=27,bottom=27,px=(w-left-right)/state.duration;let py,zero=(h+top-bottom)/2;if(view==='v'){py=px/state.speed*state.gain;py=Math.min(py,(h-top-bottom)/(2*Math.max(1.5,max)*1.05));}else py=(h-top-bottom)/(2*(max||1)*1.1);const g={left,right,top,bottom,px,py,zero};if(shapeDrag){Object.assign(g,shapeDrag.geometry);({left,right,top,bottom,px,py,zero}=g);}detailGeometry={...g,w,h};grid(ctx,w,h,g,true);const xA=left+state.a*px,xB=left+state.b*px;ctx.fillStyle='#316f5410';ctx.fillRect(Math.min(xA,xB),top,Math.abs(xB-xA),h-top-bottom);path(ctx,points,g,w,h,view==='v'?'#244d42':'#907448',1.6);ctx.font='10px ui-monospace,monospace';ctx.fillStyle='#8d8d7d';ctx.textAlign='right';const maxLabel=(zero-top)/py;for(let i=-2;i<=2;i++){const v=maxLabel*i/2;ctx.fillText(fmt(v,view==='d2'?0:view==='v'||view==='integral'?2:1),left-7,zero-v*py+3);}ctx.textAlign='center';for(let i=0;i<=5;i++)ctx.fillText(fmt(state.duration*i/5,1)+' s',left+state.duration*i/5*px,h-8);ctx.textAlign='left';ctx.fillText({v:'mV',d:'mV/s',d2:'mV/s²',integral:'mV·s'}[view],8,15);for(const [key,color]of [['a','#236451'],['b','#a16e37']]){const x=left+state[key]*px;ctx.strokeStyle=color;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,top-5);ctx.lineTo(x,h-bottom);ctx.stroke();ctx.fillStyle=color;ctx.fillRect(x-9,4,18,17);ctx.fillStyle='white';ctx.textAlign='center';ctx.fillText(key.toUpperCase(),x,16);let v=view==='integral'?integrate(t=>model.value(state.selected,t),0,state[key]):model.sample(state.selected,state[key])[view];if(Number.isFinite(v)&&zero-v*py>top&&zero-v*py<h-bottom){ctx.beginPath();ctx.arc(x,zero-v*py,3,0,2*Math.PI);ctx.fillStyle=color;ctx.fill();}}ctx.textAlign='left';drawShapeHandles(ctx,g,w,h);}
 function updateMeasurements(){const a=state.a,b=state.b,da=model.sample(state.selected,a),db=model.sample(state.selected,b),dt=b-a,area=integrate(t=>model.value(state.selected,t),a,b),rms=dt===0?Math.abs(da.v):Math.sqrt(Math.abs(integrate(t=>model.value(state.selected,t)**2,a,b)/dt));$('aTime').value=a.toFixed(4);$('bTime').value=b.toFixed(4);$('aTime').max=$('bTime').max=state.duration;$('pointValues').textContent='A: '+fmt(da.v,4)+' mV   ·   B: '+fmt(db.v,4)+' mV';const metrics=[['Time difference',fmt(Math.abs(dt)*1000,2),'ms · |B − A|'],['Voltage difference',fmt(db.v-da.v,4),'mV · f(B) − f(A)'],['Rate if A–B is R–R',dt?fmt(60/Math.abs(dt),2):'—','beats / min'],['Slope at A',fmt(da.d,3),'mV / s · f′(A)'],['Signed area A → B',fmt(area,5),'mV·s · ∫ f(t) dt'],['RMS voltage A–B',fmt(rms,4),'mV · root mean square']];$('measurements').replaceChildren(...metrics.map(([label,value,unit])=>{const div=document.createElement('div');div.className='measurement';const small=document.createElement('small'),strong=document.createElement('strong'),em=document.createElement('em');small.textContent=label;strong.textContent=value;em.textContent=unit;div.append(small,strong,em);return div;}));}
 function drawAll(){cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{drawMap();drawDetail();updateMeasurements();});}
-function rebuild(){model=compileModel(state.params,state.formulas,state.linked,state.shapes);syncControls();syncEditor();buildMap();drawAll();persist();}
-for(const k of ['hr','axis','width','pGain','tGain'])$(k).addEventListener('input',()=>{const n=Number($(k).value);if(!Number.isFinite(n)||n<Number($(k).min)||n>Number($(k).max))return;state.params[k]=n;model=compileModel(state.params,state.formulas,state.linked,state.shapes);syncControls();syncShapeEditor();drawAll();persist();});
+function rebuild(){syncEctopy();model=compileModel(state.params,state.formulas,state.linked,state.shapes,state.ectopy);syncControls();syncEditor();buildMap();drawAll();persist();}
+for(const k of ['hr','axis','width','pGain','tGain'])$(k).addEventListener('input',()=>{const n=Number($(k).value);if(!Number.isFinite(n)||n<Number($(k).min)||n>Number($(k).max))return;state.params[k]=n;model=compileModel(state.params,state.formulas,state.linked,state.shapes,state.ectopy);syncControls();syncShapeEditor();drawAll();persist();});
 for(const k of ['duration','speed','gain'])$(k).onchange=()=>{state[k]=Number($(k).value);state.a=Math.min(state.a,state.duration);state.b=Math.min(state.b,state.duration);rebuild();};
 $('layout').onchange=()=>{state.layout=$('layout').value;rebuild();};$('linked').onchange=()=>{state.linked=$('linked').checked;rebuild();};
-$('apply').onclick=()=>{try{const formula=$('formula').value.trim(),formulas={...state.formulas,[state.selected]:formula};parseFormula(formula);const next=compileModel(state.params,formulas,state.linked,state.shapes);validateModel(next,10);state.formulas=formulas;rebuild();$('formulaStatus').textContent='Applied · all traces updated';}catch(e){$('formulaStatus').className='status error';$('formulaStatus').textContent=e.message;}};
+$('apply').onclick=()=>{try{const formula=$('formula').value.trim(),formulas={...state.formulas,[state.selected]:formula};parseFormula(formula);const next=compileModel(state.params,formulas,state.linked,state.shapes,state.ectopy);validateModel(next,10);state.formulas=formulas;rebuild();$('formulaStatus').textContent='Applied · all traces updated';}catch(e){$('formulaStatus').className='status error';$('formulaStatus').textContent=e.message;}};
 $('formula').onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){$('apply').click();e.preventDefault();}};
 $('formula').oninput=()=>{$('formulaStatus').className='status';$('formulaStatus').textContent='Unapplied changes';};
 $('examples').onchange=()=>{if($('examples').value){$('formula').value=$('examples').value;$('formulaStatus').textContent='Example loaded · select Apply formula';}};
 $('resetLead').onclick=()=>{delete state.formulas[state.selected];delete state.shapes[state.selected];rebuild();};
-$('reset').onclick=()=>{if(confirm('Reset all formulas, settings, and your custom arrangement?')){state=cleanState();view='v';syncView();rebuild();}};
+$('reset').onclick=()=>{if(confirm('Reset all formulas, settings, and your custom arrangement?')){state=cleanState();editEvent=-1;view='v';syncView();rebuild();}};
 function syncView(){document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('viewDescription').textContent=interaction==='reshape'?'Choose a P, Q, R, S, or T handle. Drag vertically for amplitude, horizontally for timing.':{v:'Voltage · mV. Tap twice to place calipers A and B; drag either marker to refine.',d:'First derivative · mV/s. Instantaneous rate of voltage change; vertical scale is automatic.',d2:'Second derivative · mV/s². Rate of slope change; vertical scale is automatic.',integral:'Cumulative signed area from 0 to t · mV·s. Shown with an automatic vertical scale.'}[view];}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;if(view!=='v'){interaction='measure';$('interactionMode').value='measure';}syncShapeEditor();syncView();drawDetail();});
 function changeCaliper(key,v){state[key]=Math.max(0,Math.min(state.duration,v));drawDetail();updateMeasurements();persist();}
@@ -56,8 +56,8 @@ $('detail').onpointermove=e=>{if(shapeDrag){moveShapeDrag(e);return;}if(!draggin
 $('detail').onpointerup=$('detail').onpointercancel=()=>{dragging=null;if(shapeDrag){shapeDrag=null;drawAll();persist();}};
 function download(name,content,type){const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
 $('export').onclick=()=>{try{validateModel(model,state.duration);const leads=activeLeads(state.extras,state.order);const lines=['time_s,'+leads.map(l=>l+'_mV').join(',')];for(let n=0;n<=state.duration*1000;n++){const t=n/1000;lines.push(t.toFixed(3)+','+leads.map(l=>model.value(l,t).toFixed(8)).join(','));}download('ecg-'+leads.length+'-leads-1000Hz.csv',lines.join('\n'),'text/csv');toast('Exported '+leads.length+' leads at 1,000 Hz.');}catch(e){toast('Export stopped: '+e.message);}};
-$('save').onclick=()=>download('ecg-calculus-session.json',JSON.stringify(state,null,2),'application/json');
-$('load').onclick=()=>$('loadFile').click();$('loadFile').onchange=async()=>{try{const f=$('loadFile').files[0];if(!f)return;if(f.size>100000)throw Error('Session file is too large.');const next=checkState(JSON.parse(await f.text()));validateModel(compileModel(next.params,next.formulas,next.linked,next.shapes),10);state=next;rebuild();toast('Session restored.');}catch(e){toast('Could not load session: '+e.message);}finally{$('loadFile').value='';}};
+$('save').onclick=()=>download('ecg-waveform-session.json',JSON.stringify(state,null,2),'application/json');
+$('load').onclick=()=>$('loadFile').click();$('loadFile').onchange=async()=>{try{const f=$('loadFile').files[0];if(!f)return;if(f.size>100000)throw Error('Session file is too large.');const next=checkState(JSON.parse(await f.text()));validateModel(compileModel(next.params,next.formulas,next.linked,next.shapes,next.ectopy),10);state=next;editEvent=-1;rebuild();toast('Session restored.');}catch(e){toast('Could not load session: '+e.message);}finally{$('loadFile').value='';}};
 $('print').onclick=()=>window.print();window.addEventListener('beforeprint',()=>{document.body.classList.add('printing');document.querySelectorAll('.lead-card canvas').forEach(c=>c.style.height='');drawMap();});window.addEventListener('afterprint',()=>{document.body.classList.remove('printing');drawAll();});
 function populateLayout(rows){$('layoutRows').replaceChildren();rows.forEach((row,r)=>{const num=document.createElement('span');num.textContent=r+1;$('layoutRows').append(num);row.forEach((lead,c)=>{const select=document.createElement('select');select.setAttribute('aria-label','Row '+(r+1)+', column '+(c+1));for(const l of (state.layout==='stacked'?activeLeads(state.extras,state.order):[null,...STANDARD_LEADS])){const o=document.createElement('option');o.value=l||'';o.textContent=l||'Empty';select.append(o);}select.value=lead||'';$('layoutRows').append(select);});});$('layoutError').textContent='';}
 $('editLayout').onclick=()=>{const stacked=state.layout==='stacked';$('layoutRows').classList.toggle('single-column',stacked);$('layoutHelp').textContent=stacked?'Set the top-to-bottom order. Include every visible lead once.':'Place each standard lead once. Selected extra leads are appended below this arrangement.';populateLayout(stacked?activeLeads(state.extras,state.order).map(l=>[l]):state.layout==='custom'?state.custom:PAIRED);$('layoutDialog').showModal();};$('restoreLayout').onclick=()=>populateLayout(state.layout==='stacked'?activeLeads(state.extras,DEFAULT_ORDER).map(l=>[l]):PAIRED);
@@ -67,7 +67,7 @@ function syncShapeEditor(){
  $('interactionMode').value=interaction;
  const active=activeLeads(state.extras,state.order),select=$('shapeLead');
  if([...select.options].map(o=>o.value).join(',')!==active.join(',')){select.replaceChildren(...active.map(l=>{const o=document.createElement('option');o.value=l;o.textContent=l;return o;}));}select.value=state.selected;
- const shape=state.shapes[state.selected]||{},w=waveSettings(state.params,state.selected,shape)[shapeWave],locked=shapeIsLocked();
+ const shape=currentShape(),w=currentWaves()[shapeWave],locked=shapeIsLocked();
  $('shapeLocked').hidden=!locked;for(const id of ['waveAmplitude','waveShift','waveWidth','leadGain','leadBaseline','resetShape'])$(id).disabled=locked;
  $('waveAmplitude').value=w.amplitude;$('waveAmplitudeOut').textContent=fmt(w.amplitude,3)+' mV';
  $('waveShift').value=w.shift*1000;$('waveShiftOut').textContent=fmt(w.shift*1000,0)+' ms';
@@ -76,8 +76,8 @@ function syncShapeEditor(){
  $('leadBaseline').value=shape.baseline??0;$('leadBaselineOut').textContent=fmt(shape.baseline??0,2)+' mV';
  document.querySelectorAll('[data-wave]').forEach(b=>b.classList.toggle('active',b.dataset.wave===shapeWave));
 }
-function updateShape(){model=compileModel(state.params,state.formulas,state.linked,state.shapes);syncShapeEditor();drawAll();persist();}
-function editWave(key,value){if(shapeIsLocked())return;const s=state.shapes[state.selected]??={};s.waves??={};s.waves[shapeWave]={...s.waves[shapeWave],[key]:value};updateShape();}
+function updateShape(){model=compileModel(state.params,state.formulas,state.linked,state.shapes,state.ectopy);syncShapeEditor();drawAll();persist();}
+function editWave(key,value){if(shapeIsLocked())return;const s=currentShape(true);s.waves??={};s.waves[shapeWave]={...s.waves[shapeWave],[key]:value};updateShape();}
 function setupShapeControls(){
  $('shapeLead').onchange=()=>selectLead($('shapeLead').value);
  $('interactionMode').onchange=()=>{interaction=$('interactionMode').value;shapeDrag=null;dragging=null;if(interaction==='reshape')view='v';syncView();drawDetail();};
@@ -85,15 +85,16 @@ function setupShapeControls(){
  $('waveAmplitude').oninput=()=>editWave('amplitude',Number($('waveAmplitude').value));
  $('waveShift').oninput=()=>editWave('shift',Number($('waveShift').value)/1000);
  $('waveWidth').oninput=()=>editWave('widthFactor',Number($('waveWidth').value));
- for(const [id,key]of [['leadGain','gain'],['leadBaseline','baseline']])$(id).oninput=()=>{if(shapeIsLocked())return;(state.shapes[state.selected]??={})[key]=Number($(id).value);updateShape();};
- $('resetShape').onclick=()=>{delete state.shapes[state.selected];updateShape();};
+ for(const [id,key]of [['leadGain','gain'],['leadBaseline','baseline']])$(id).oninput=()=>{if(shapeIsLocked())return;currentShape(true)[key]=Number($(id).value);updateShape();};
+ $('resetShape').onclick=()=>{delete shapeStore()[state.selected];updateShape();};
  $('unlockShape').onclick=()=>{state.linked=false;rebuild();toast(state.selected+' is now independently editable.');};
 }
 function drawShapeHandles(ctx,g,w,h){
  shapeHandles=[];if(interaction!=='reshape'||view!=='v'||shapeIsLocked())return;
- const wave=waveSettings(state.params,state.selected,state.shapes[state.selected])[shapeWave],T=60/state.params.hr;
+ const wave=currentWaves()[shapeWave],T=60/state.params.hr;
  ctx.save();ctx.beginPath();ctx.rect(g.left,g.top,w-g.left-g.right,h-g.top-g.bottom);ctx.clip();
- for(let k=Math.ceil(-wave.center/T);k*T+wave.center<=state.duration;k++){
+ for(let k=editEvent>=0?0:Math.ceil(-wave.center/T);k*T+wave.center<=state.duration&&(editEvent<0||k===0);k++){
+  if(editEvent<0&&state.ectopy.some(e=>e.beat===k||e.skipNext&&e.beat+1===k))continue;
   const t=wave.center+k*T,v=model.value(state.selected,t),x=g.left+t*g.px,y=g.zero-v*g.py;if(!Number.isFinite(v))continue;
   shapeHandles.push({x,y,t,k});ctx.beginPath();ctx.arc(x,y,8,0,2*Math.PI);ctx.fillStyle='#fffefa';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#bf7832';ctx.stroke();ctx.beginPath();ctx.arc(x,y,3,0,2*Math.PI);ctx.fillStyle='#bf7832';ctx.fill();ctx.font='bold 11px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(shapeWave==='W'?'T':shapeWave,x,y-14);
  }ctx.restore();
@@ -107,15 +108,32 @@ function startShapeDrag(e){
 }
 function moveShapeDrag(e){
  const g=shapeDrag.geometry,rect=$('detail').getBoundingClientRect(),x=e.clientX-rect.left+shapeDrag.dx,y=e.clientY-rect.top+shapeDrag.dy,T=60/state.params.hr;
- const shape=state.shapes[state.selected]??={},waves=shape.waves??={},edit=waves[shapeWave]??={};const base=waveSettings(state.params,state.selected,shape)[shapeWave];
+ const shape=currentShape(true),waves=shape.waves??={},edit=waves[shapeWave]??={};const base=currentWaves()[shapeWave];
  edit.shift=Math.max(-.2,Math.min(.2,(x-g.left)/g.px-shapeDrag.k*T-base.originalCenter));
  const t=base.originalCenter+edit.shift+shapeDrag.k*T,target=(g.zero-y)/g.py,currentAmplitude=edit.amplitude??base.amplitude;
- let current=compileModel(state.params,state.formulas,state.linked,state.shapes).value(state.selected,t);
+ let current=compileModel(state.params,state.formulas,state.linked,state.shapes,state.ectopy).value(state.selected,t);
  edit.amplitude=currentAmplitude+.01;
- const probe=compileModel(state.params,state.formulas,state.linked,state.shapes).value(state.selected,t),sensitivity=(probe-current)/.01;
+ const probe=compileModel(state.params,state.formulas,state.linked,state.shapes,state.ectopy).value(state.selected,t),sensitivity=(probe-current)/.01;
  edit.amplitude=Number.isFinite(sensitivity)&&Math.abs(sensitivity)>1e-9?Math.max(-3,Math.min(3,currentAmplitude+(target-current)/sensitivity)):currentAmplitude;
  updateShape();
 }
 
 new ResizeObserver(()=>drawAll()).observe($('leadMap'));window.addEventListener('resize',drawAll);
-setupShapeControls();buildExtraControls();syncControls();syncEditor();syncView();buildMap();drawAll();
+setupEctopy();syncEctopy();setupShapeControls();buildExtraControls();syncControls();syncEditor();syncView();buildMap();drawAll();
+
+function shapeStore(){return editEvent>=0?state.ectopy[editEvent].shapes:state.shapes;}
+function currentShape(create=false){const store=shapeStore();return create?(store[state.selected]??={}):(store[state.selected]||{});}
+function currentWaves(){return editEvent>=0?ectopicWaveSettings(state.params,state.selected,state.ectopy[editEvent]):waveSettings(state.params,state.selected,currentShape());}
+function syncEctopy(){
+ if(editEvent>=state.ectopy.length)editEvent=-1;
+ const select=$('editBeat');select.replaceChildren();for(const [value,label] of [[-1,'Normal repeating beats'],...state.ectopy.map((e,i)=>[i,`${i+1}. ${e.type} at ${e.time.toFixed(3)} s`])]){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}select.value=editEvent;
+ $('ectopyCount').textContent=state.ectopy.length+' ectopic beats';$('eventControls').hidden=editEvent<0;
+ if(editEvent>=0){const e=state.ectopy[editEvent];$('eventTime').value=e.time;$('eventBeat').value=e.beat+1;$('skipNext').checked=e.skipNext;}
+}
+function setupEctopy(){
+ $('editBeat').onchange=()=>{editEvent=Number($('editBeat').value);shapeDrag=null;syncEctopy();syncShapeEditor();drawDetail();};
+ $('addEctopy').onclick=()=>{try{const T=60/state.params.hr,used=new Set(state.ectopy.flatMap(e=>[e.beat,...(e.skipNext?[e.beat+1]:[])]));let beat=1;while(used.has(beat))beat++;if((beat+.35)*T>state.duration)throw Error('No free beat in this window. Extend the window or remove an event.');const e={type:$('ectopyType').value,beat,time:Math.max(0,(beat+.1)*T),skipNext:false,shapes:{}};validateEctopy([...state.ectopy,e]);state.ectopy.push(e);editEvent=state.ectopy.length-1;rebuild();$('inspector').scrollIntoView({behavior:'smooth'});}catch(e){toast(e.message);}};
+ const change=()=>{const e=state.ectopy[editEvent],next={...e,time:Number($('eventTime').value),beat:Number($('eventBeat').value)-1,skipNext:$('skipNext').checked};try{validateEctopy(state.ectopy.map((v,i)=>i===editEvent?next:v));state.ectopy[editEvent]=next;rebuild();}catch(err){toast(err.message);syncEctopy();}};
+ $('eventTime').onchange=change;$('eventBeat').onchange=change;$('skipNext').onchange=change;
+ $('removeEctopy').onclick=()=>{state.ectopy.splice(editEvent,1);editEvent=-1;rebuild();};
+}

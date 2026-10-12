@@ -1,4 +1,4 @@
-# ECG Calculus Lab
+# ECG Waveform Lab
 
 A buildless, browser-local mathematical ECG workbench. Serves from `docs/` using GitHub Pages.
 
@@ -28,3 +28,5 @@ Per-lead waveform controls set each P/Q/R/S/T component's amplitude, timing offs
 ## GitHub Pages
 
 In Settings → Pages, select **Deploy from a branch**, branch **main**, folder **/docs**. All assets use relative paths and require no build or server. Browser sessions are stored per website origin: use **Save session** on the previous site and **Load session** here to transfer edits.
+
+Default view: 10 seconds per lead. Landscape printing. Rate range 30–300 bpm. Add editable PAC, PJC, or PVC events in the shape editor; each replaces a chosen normal beat with adjustable timing and per-lead PQRST components. Optional skipped next beat. Existing v4 sessions migrate to the 10-second view without losing waveform edits.
