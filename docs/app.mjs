@@ -1,4 +1,4 @@
-import {createPrintSVG} from './print.mjs?v=8';
+import {createPrintSVG,createPrintPDF} from './print.mjs?v=9';
 import {MAIN_COLUMN,RIGHT_COLUMN,DEFAULT_ORDER,activeLeads,leadRows,migrateSession,validateLeadSelection} from './layout.mjs?v=8';
 import {LEADS,STANDARD_LEADS,EXTRA_LEADS,RIGHT,POSTERIOR,RIGHT_POSTERIOR,PAIRED,STANDARD,DEFAULTS,WAVE_KEYS,ectopicWaveSettings,validateEctopy,waveSettings,validateShapes,compileModel,parseFormula,integrate,validateModel} from './engine.mjs';
 const $=id=>document.getElementById(id),KEY='ecg-calculus-lab-v1',DERIVED=['III','aVR','aVL','aVF'];
@@ -60,7 +60,7 @@ $('export').onclick=()=>{try{validateModel(model,state.duration);const leads=act
 $('save').onclick=()=>download('ecg-waveform-session.json',JSON.stringify(state,null,2),'application/json');
 $('load').onclick=()=>$('loadFile').click();$('loadFile').onchange=async()=>{try{const f=$('loadFile').files[0];if(!f)return;if(f.size>100000)throw Error('Session file is too large.');const next=checkState(JSON.parse(await f.text()));validateModel(compileModel(next.params,next.formulas,next.linked,next.shapes,next.ectopy),10);state=next;editEvent=-1;rebuild();toast('Session restored.');}catch(e){toast('Could not load session: '+e.message);}finally{$('loadFile').value='';}};
 function preparePrint(){const result=createPrintSVG(model,state);$('printSheet').innerHTML=result.svg;}
-$('print').onclick=()=>{try{preparePrint();window.print();}catch(e){toast(e.message);}};
+$('print').onclick=()=>{try{download('ecg-single-page.pdf',createPrintPDF(model,state),'application/pdf');toast('One-page PDF ready. Open it and print at Actual size / 100%.');}catch(e){toast(e.message);}};
 window.addEventListener('beforeprint',preparePrint);
 window.addEventListener('afterprint',drawAll);
 function populateLayout(rows){$('layoutRows').replaceChildren();rows.forEach((row,r)=>{const num=document.createElement('span');num.textContent=r+1;$('layoutRows').append(num);row.forEach((lead,c)=>{const select=document.createElement('select');select.setAttribute('aria-label','Row '+(r+1)+', column '+(c+1));for(const l of (state.layout==='stacked'?activeLeads(state.extras,state.order):[null,...STANDARD_LEADS])){const o=document.createElement('option');o.value=l||'';o.textContent=l||'Empty';select.append(o);}select.value=lead||'';$('layoutRows').append(select);});});$('layoutError').textContent='';}
