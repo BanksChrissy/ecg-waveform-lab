@@ -20,3 +20,13 @@
 .ectopy-toolbar{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:16px}.ectopy-toolbar label{display:inline-flex;gap:7px;align-items:center;margin:8px 12px 8px 0;font-size:12px}.ectopy-toolbar p{font-size:11px}.ectopy-toolbar small{font-weight:400;color:var(--muted);margin-left:10px}#eventControls input[type=number]{width:90px}#editBeat{max-width:280px}
 
 .ectopy-toolbar .event-slide{display:flex;flex-direction:column;align-items:stretch;max-width:500px;margin:12px 0 18px}.event-slide input{height:8px}
+
+/* Thermal ECG report styling */
+.lead-card,.detail-plot{background:white;border-radius:0;border-color:#dfb4bb}.lead-card canvas{background:white}.lead-heading{color:#111;font-family:Arial,sans-serif}.lead-heading strong{color:#111!important}.lead-card.selected{border-color:#202020;box-shadow:0 0 0 1px #555}.lead-map{gap:2px 12px}.lead-heading span{color:#555}#printSheet{display:none}
+@media print{
+ @page{size:letter landscape;margin:8mm}
+ body>*{display:none!important}
+ body>#printSheet{display:block!important;width:263mm!important;height:197mm!important;margin:0!important;padding:0!important;break-inside:avoid;overflow:hidden}
+ #printSheet svg{display:block;width:263mm!important;height:197mm!important;max-width:none!important}
+ html,body{margin:0!important;padding:0!important;width:263mm!important;background:white!important}
+}
