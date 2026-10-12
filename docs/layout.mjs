@@ -2,10 +2,10 @@ import {STANDARD_LEADS,EXTRA_LEADS,LEADS,PAIRED,STANDARD} from './engine.mjs';
 export const MAIN_COLUMN=['aVR','V7','V8','V9','V1','V2','V3','V4','II','III','aVF','aVL','I','V5','V6'];
 export const RIGHT_COLUMN=['V7R','V8R','V9R','V1R','V2R','V3R','V4R','V5R','V6R'];
 export const DEFAULT_ORDER=[...MAIN_COLUMN,...RIGHT_COLUMN];
-export function activeLeads(extras=[],order=DEFAULT_ORDER){return order.filter(l=>MAIN_COLUMN.includes(l)||extras.includes(l));}
+export function activeLeads(extras=[],order=DEFAULT_ORDER){return order.filter(l=>STANDARD_LEADS.includes(l)||extras.includes(l));}
 export function leadRows(layout,extras=[],custom=PAIRED,order=DEFAULT_ORDER){
- extras=[...new Set(['V7','V8','V9',...extras])];
- if(layout==='columns'){const show=RIGHT_COLUMN.some(l=>extras.includes(l));return MAIN_COLUMN.map((l,i)=>show?[l,extras.includes(RIGHT_COLUMN[i])?RIGHT_COLUMN[i]:null]:[l]);}
+ extras=[...new Set(extras)];
+ if(layout==='columns'){const show=RIGHT_COLUMN.some(l=>extras.includes(l));return MAIN_COLUMN.filter(l=>STANDARD_LEADS.includes(l)||extras.includes(l)).map((l,i)=>show?[l,extras.includes(RIGHT_COLUMN[i])?RIGHT_COLUMN[i]:null]:[l]);}
  if(layout==='stacked')return activeLeads(extras,order).map(l=>[l]);
  if(layout==='paired'){
   const rows=PAIRED.map(r=>[...r]);
