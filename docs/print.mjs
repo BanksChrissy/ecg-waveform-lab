@@ -18,7 +18,7 @@ export function createPrintSVG(model,state){
 }
 
 // Fixed landscape Letter page; all coordinates below are physical millimeters.
-export function createPrintPDF(model,state){
+function createStackPDF(model,state){
  const {speed,gain}=createPrintSVG(model,state),right=RIGHT_COLUMN.filter(l=>state.extras.includes(l));
  const main=MAIN_COLUMN.filter(l=>!['V7','V8','V9'].includes(l)||state.extras.includes(l)),cols=right.length?2:1;
  const scale=72/25.4,H=612,commands=[],n=v=>Number(v.toFixed(4));
@@ -46,4 +46,27 @@ export function createPrintPDF(model,state){
  const stream=commands.join('\n'),objects=[`<< /Type /Catalog /Pages 2 0 R /ViewerPreferences << /PrintScaling /None >> >>`,`<< /Type /Pages /Kids [3 0 R] /Count 1 >>`,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`,`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`,`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
  let pdf='%PDF-1.4\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${o}\nendobj\n`;});const start=pdf.length;pdf+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`+offsets.slice(1).map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
  return pdf;
+}
+
+export function createPrintPDF(model,state){
+ if(state.printLayout==='stack')return createStackPDF(model,state);
+ const portrait=state.printOrientation==='portrait',PW=portrait?612:792,PH=portrait?792:612,mm=72/25.4;
+ const speed=portrait?12.5:25,gain=10,plotX=12,plotW=10*speed,rowH=32,top=25,commands=[];
+ const n=x=>Number(x.toFixed(4)),xy=(x,y)=>`${n(x*mm)} ${n(PH-y*mm)}`;
+ const line=(a,b,c,d)=>commands.push(`${xy(a,b)} m ${xy(c,d)} l S`);
+ const text=(x,y,size,value)=>{const v=String(value).replace(/[^\x20-\x7e]/g,'-').replace(/[\\()]/g,'\\$&');commands.push(`0 0 0 rg BT /F1 ${n(size*mm)} Tf 1 0 0 1 ${xy(x,y)} Tm (${v}) Tj ET`);};
+ text(12,12,3.4,'ECG WAVEFORM LAB - 12-LEAD ECG');text(12,18,2.5,`${state.params.hr} bpm | ${speed} mm/s | 10 mm/mV | 3 x 4 + rhythm | SYNTHETIC ECG`);
+ text(12,22,2.1,'Print Actual size / 100%. Each short segment is 2.5 s; rhythm strip is 10 s.');
+ let clipped=false;
+ const grid=(x,y,w,h)=>{for(let major=0;major<2;major++){commands.push(major?'0.85 0.59 0.63 RG':'0.93 0.75 0.77 RG',`${n((major?.15:.07)*mm)} w`);for(let u=0;u<=w;u++)if((u%5===0)===!!major)line(x+u,y,x+u,y+h);for(let v=0;v<=h;v++)if((v%5===0)===!!major)line(x,y+v,x+w,y+v);}};
+ const trace=(lead,x,y,start,duration)=>{const w=duration*speed,zero=y+20;grid(x,y,w,rowH);text(x+1,y+4,2.7,lead);text(x+w-15,y+4,1.8,`${start}-${start+duration} s`);commands.push(`q ${xy(x,y+rowH)} ${n(w*mm)} ${n(rowH*mm)} re W n 0 0 0 RG ${n(.22*mm)} w 1 J 1 j`);const pts=[];for(let j=0;j<=duration*1000;j++){const t=j/1000,v=model.value(lead,start+t);if(!Number.isFinite(v))throw Error('Invalid waveform cannot be printed.');if(zero-v*gain<y||zero-v*gain>y+rowH)clipped=true;pts.push(`${xy(x+t*speed,zero-v*gain)} ${j?'l':'m'}`);}commands.push(pts.join('\n')+'\nS Q');};
+ const rows=[['I','aVR','V1','V4'],['II','aVL','V2','V5'],['III','aVF','V3','V6']];
+ rows.forEach((row,r)=>row.forEach((lead,c)=>trace(lead,plotX+c*2.5*speed,top+r*rowH,c*2.5,2.5)));
+ const rhythm=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'].includes(state.rhythmLead)?state.rhythmLead:'II';
+ const rhythmY=top+3*rowH+7;trace(rhythm,plotX,rhythmY,0,10);
+ const foot=rhythmY+rowH+13;commands.push(`0 0 0 RG ${n(.2*mm)} w`);line(12,foot,32,foot);line(12,foot-1,12,foot+1);line(32,foot-1,32,foot+1);text(12,foot+4,2,'20 mm ruler check');
+ const pulse=[[45,foot],[47,foot],[47,foot-10],[47+speed*.2,foot-10],[47+speed*.2,foot],[49+speed*.2,foot]];commands.push(pulse.map(([x,y],i)=>`${xy(x,y)} ${i?'l':'m'}`).join('\n')+'\nS');text(62,foot,2,'1 mV x 200 ms');text(62,foot+4,2,`1 mm = ${1000/speed} ms x 0.1 mV`);
+ if(clipped)text(12,foot+10,2,'Some amplitudes exceed the report lanes at 10 mm/mV; use the stacked report for auto-scaled traces.');
+ const stream=commands.join('\n'),objects=[`<< /Type /Catalog /Pages 2 0 R /ViewerPreferences << /PrintScaling /None >> >>`,`<< /Type /Pages /Kids [3 0 R] /Count 1 >>`,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`,`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`,`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+ let pdf='%PDF-1.4\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${o}\nendobj\n`;});const start=pdf.length;pdf+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`+offsets.slice(1).map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;return pdf;
 }
